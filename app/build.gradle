@@ -5,8 +5,25 @@ apply plugin: 'kotlinx-serialization'
 android {
     signingConfigs {
         release {
-            keyAlias 'fdroid'
-            storeFile file('.config/android/roundsync.keystore')
+            // Check if the production keystore file exists
+            def keystoreFile = file('.config/android/roundsync.keystore')
+            if (keystoreFile.exists()) {
+                // Production signing configuration
+                keyAlias 'fdroid'
+                storeFile keystoreFile
+                // Set passwords via gradle.properties or environment variables:
+                // KEYSTORE_PASSWORD=your_keystore_password
+                // KEY_PASSWORD=your_key_password (optional, defaults to KEYSTORE_PASSWORD)
+                storePassword project.hasProperty('KEYSTORE_PASSWORD') ? project.property('KEYSTORE_PASSWORD') : System.getenv('KEYSTORE_PASSWORD')
+                keyPassword project.hasProperty('KEY_PASSWORD') ? project.property('KEY_PASSWORD') : (project.hasProperty('KEYSTORE_PASSWORD') ? project.property('KEYSTORE_PASSWORD') : System.getenv('KEY_PASSWORD') ?: System.getenv('KEYSTORE_PASSWORD'))
+            } else {
+                // Fallback to debug keystore for development builds
+                println "INFO: Production keystore not found, using debug keystore for release builds"
+                storeFile file('../gradle/debug.keystore')
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+                storePassword 'android'
+            }
         }
     }
     ndkVersion project.properties['de.felixnuesse.extract.ndkVersion']
@@ -33,6 +50,7 @@ android {
 
     buildFeatures {
         viewBinding true
+        buildConfig true
     }
 
     buildTypes {
