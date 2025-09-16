@@ -4,8 +4,9 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.res.AssetManager;
 import android.content.res.Configuration;
-import android.os.AsyncTask;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.AttributeSet;
 import android.webkit.WebView;
 import android.widget.Toast;
@@ -15,12 +16,22 @@ import org.markdownj.MarkdownProcessor;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.lang.ref.WeakReference;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import es.dmoral.toasty.Toasty;
 
 public class MarkdownView extends WebView {
 
     private static final String TAG = "MarkdownView";
+    private static ExecutorService executor;
+    private static Handler mainHandler;
+
+    static {
+        executor = Executors.newCachedThreadPool();
+        mainHandler = new Handler(Looper.getMainLooper());
+    }
 
     public MarkdownView(Context context) {
         super(patchContext(context));
@@ -50,46 +61,114 @@ public class MarkdownView extends WebView {
     }
 
     public void loadAsset(String path) {
-        new LoadMarkdownAsset(path, this).execute();
+        if (path == null || path.trim().isEmpty()) {
+            loadUrl("about:blank");
+            return;
+        }
+        
+        // Get context on main thread before background processing
+        Context context = getContext();
+        if (context == null) {
+            FLog.e(TAG, "Context is null, cannot load asset: " + path);
+            loadUrl("about:blank");
+            return;
+        }
+        
+        new LoadMarkdownAsset(path, this, context).execute();
     }
 
-    private static class LoadMarkdownAsset extends AsyncTask<Void, Void, String> {
-
+    private static class LoadMarkdownAsset {
         private static final String TAG = "LoadMarkdownAsset";
         private final String assetName;
-        private final WebView webView;
+        private final WeakReference<WebView> webViewRef;
+        private final Context context;
 
-        public LoadMarkdownAsset(String assetName, WebView webView) {
+        public LoadMarkdownAsset(String assetName, WebView webView, Context context) {
             this.assetName = assetName;
-            this.webView = webView;
+            this.webViewRef = new WeakReference<>(webView); // Prevent memory leaks
+            this.context = context.getApplicationContext(); // Use application context to avoid leaks
         }
 
-        @Override
-        protected String doInBackground(Void... voids) {
-            Context context = webView.getContext();
+        public void execute() {
+            executor.execute(() -> {
+                try {
+                    String html = doInBackground();
+                    
+                    // Post result back to main thread
+                    mainHandler.post(() -> onPostExecute(html));
+                } catch (Exception e) {
+                    FLog.e(TAG, "Error loading markdown asset: " + assetName, e);
+                    mainHandler.post(() -> onPostExecute(null));
+                }
+            });
+        }
+
+        private String doInBackground() {
+            if (context == null) {
+                FLog.e(TAG, "Context is null in background thread");
+                return null;
+            }
+
             AssetManager assetManager = context.getAssets();
+            StringBuilder markdown = new StringBuilder(4096);
+            
             try (BufferedReader br = new BufferedReader(new InputStreamReader(assetManager.open(assetName)))) {
-                StringBuilder markdown = new StringBuilder(4096);
                 String line;
                 while ((line = br.readLine()) != null) {
-                    // Use \n as line seperator so that the processor does not
+                    // Use \n as line separator so that the processor does not
                     // have to replace this.
                     markdown.append(line).append('\n');
                 }
+                
+                if (markdown.length() == 0) {
+                    FLog.w(TAG, "Empty markdown content for asset: " + assetName);
+                    return null;
+                }
+                
                 return new MarkdownProcessor().markdown(markdown.toString());
             } catch (IOException e) {
-                FLog.e(TAG, "Could not load asset ", e);
+                FLog.e(TAG, "Could not load asset: " + assetName, e);
+                return null;
+            } catch (Exception e) {
+                FLog.e(TAG, "Error processing markdown for asset: " + assetName, e);
+                return null;
             }
-            return null;
         }
 
-        @Override
-        protected void onPostExecute(String html) {
-            if (null == html) {
-                webView.loadUrl("about:blank");
-            } else {
-                webView.loadDataWithBaseURL("local://", html, "text/html", "UTF-8", null);
+        private void onPostExecute(String html) {
+            WebView webView = webViewRef.get();
+            if (webView == null) {
+                FLog.w(TAG, "WebView reference is null, cannot load content");
+                return;
             }
+
+            try {
+                if (html == null || html.trim().isEmpty()) {
+                    webView.loadUrl("about:blank");
+                } else {
+                    webView.loadDataWithBaseURL("local://", html, "text/html", "UTF-8", null);
+                }
+            } catch (Exception e) {
+                FLog.e(TAG, "Error loading HTML content into WebView", e);
+                try {
+                    webView.loadUrl("about:blank");
+                } catch (Exception fallbackException) {
+                    FLog.e(TAG, "Failed to load blank page as fallback", fallbackException);
+                }
+            }
+        }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        // Clean up resources if needed
+    }
+
+    // Clean up static resources when no longer needed
+    public static void cleanup() {
+        if (executor != null && !executor.isShutdown()) {
+            executor.shutdown();
         }
     }
 }
