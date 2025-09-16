@@ -125,7 +125,28 @@ app/build/outputs/apk/
 
 ## Quick Build Scripts
 
-For convenience, you can use these one-liners:
+**🚀 Convenient One-Command Solution:**
+
+```bash
+# Build release APK with automatic prerequisite checks (RECOMMENDED)
+./build-apk.sh
+
+# Test prerequisites without building
+./build-apk.sh --test-only
+
+# Show help and options
+./build-apk.sh --help
+```
+
+The `build-apk.sh` script provides:
+- ✅ Automatic prerequisite validation (Go 1.20+, Java 17+)
+- ✅ Clear progress indicators and error handling
+- ✅ Highlights the recommended arm64-v8a APK
+- ✅ Shows final APK location and installation instructions
+
+**Manual Gradle Commands:**
+
+For convenience, you can also use these direct Gradle commands:
 
 ```bash
 # Quick debug build (fastest)
