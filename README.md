@@ -105,25 +105,13 @@ You should first make sure you have:
 - Android SDK command-line tools installed OR the NDK version specified in `gradle.properties`
   installed
 
-You can then build the app normally from Android Studio or from CLI:
-
-### Quick Build (Recommended)
-
-```sh
-# One-command APK build with prerequisites check
-./build-apk.sh
-
-# Test your setup without building
-./build-apk.sh --test-only
-```
-
-### Manual Build Commands
+You can then build the app normally from Android Studio or from CLI by running:
 
 ```sh
 # Debug build
 ./gradlew assembleOssDebug
 
-# Release build
+# or release build
 ./gradlew assembleOssRelease
 ```
 
